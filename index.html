@@ -3,202 +3,342 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detector de Olhos - IA</title>
+    <title>Classificador: Banana vs Mamão</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 600px;
             margin: 0 auto;
             padding: 20px;
             text-align: center;
-            background-color: #f5f5f5;
+            background: linear-gradient(135deg, #ffeb3b, #4caf50);
+            min-height: 100vh;
         }
         .container {
             background: white;
             padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
-        #webcam, #imagePreview {
-            max-width: 100%;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            margin: 10px 0;
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .upload-area {
+            border: 3px dashed #4caf50;
+            border-radius: 10px;
+            padding: 40px 20px;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            background-color: #f9f9f9;
+            border-color: #ff9800;
+        }
+        #imagePreview {
+            max-width: 300px;
+            max-height: 300px;
+            border: 3px solid #ddd;
+            border-radius: 10px;
+            margin: 20px auto;
+            display: none;
         }
         button {
-            background-color: #007bff;
+            background: linear-gradient(45deg, #4caf50, #ff9800);
             color: white;
             border: none;
-            padding: 10px 20px;
-            margin: 5px;
-            border-radius: 5px;
+            padding: 12px 30px;
+            margin: 10px;
+            border-radius: 25px;
             cursor: pointer;
             font-size: 16px;
+            font-weight: bold;
         }
-        button:hover {
-            background-color: #0056b3;
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
         }
         #result {
-            font-size: 18px;
+            font-size: 24px;
             font-weight: bold;
-            margin: 15px 0;
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            min-height: 40px;
+        }
+        .banana { 
+            background-color: #fff9c4;
+            color: #f57c00;
+            border: 2px solid #ffeb3b;
+        }
+        .mamao { 
+            background-color: #e8f5e8;
+            color: #388e3c;
+            border: 2px solid #4caf50;
+        }
+        .loading {
+            color: #2196f3;
+        }
+        .error {
+            background-color: #ffebee;
+            color: #c62828;
+            border: 2px solid #f44336;
+        }
+        .debug {
+            background: #f5f5f5;
             padding: 10px;
             border-radius: 5px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            text-align: left;
         }
-        .open { color: green; }
-        .closed { color: red; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>É banana ou mamão?</h1>
+        <div style="font-size: 48px; margin: 10px;">🍌 🆚 🍈</div>
+        <h1>Classificador: Banana vs Mamão</h1>
         
-        
-        <div>
-            <input type="file" id="fileInput" accept="image/*" onchange="handleImageUpload(this.files)">
-            <label for="fileInput">📁 sua sua imagem!</label>
+        <div class="upload-area" id="uploadArea">
+            <p>📁 Arraste e solte uma imagem aqui</p>
+            <p>ou</p>
+            <input type="file" id="fileInput" accept="image/*" style="display: none;">
+            <button onclick="document.getElementById('fileInput').click()">
+                Selecione um Arquivo
+            </button>
         </div>
 
-        <div id="result">Aguardando análise...</div>
+        <img id="imagePreview" alt="Pré-visualização">
         
-        <div id="loading" style="display: none;">
-            ⏳ Processando imagem...
+        <div>
+            <button onclick="classifyImage()" id="classifyBtn" disabled>
+                🧠 Classificar Imagem
+            </button>
+            <button onclick="resetApp()">
+                🔄 Nova Imagem
+            </button>
+        </div>
+
+        <div id="result">
+            Faça upload de uma imagem para começar!
+        </div>
+
+        <div id="debugInfo" class="debug" style="display: none;">
+            <strong>Informações de Debug:</strong>
+            <div id="debugContent"></div>
         </div>
     </div>
 
-    <!-- Incluir TensorFlow.js -->
+    <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
 
     <script>
-        let model;
-        let webcamStream;
+        let model = null;
+        let currentImage = null;
 
-        // 🔧 CONFIGURAÇÃO DO MODELO - VOCÊ PRECISA AJUSTAR ESTA URL!
+        // 🔧 URL do seu modelo
         const MODEL_URL = 'https://raw.githubusercontent.com/nay-ramos/IA-propting-experiments/main/model.json';
 
-        // Carregar o modelo quando a página abrir
-        async function loadModel() {
+        // Elementos
+        const elements = {
+            fileInput: document.getElementById('fileInput'),
+            imagePreview: document.getElementById('imagePreview'),
+            classifyBtn: document.getElementById('classifyBtn'),
+            result: document.getElementById('result'),
+            debugInfo: document.getElementById('debugInfo'),
+            debugContent: document.getElementById('debugContent')
+        };
+
+        // Inicializar aplicação
+        async function initApp() {
             try {
-                document.getElementById('loading').style.display = 'block';
+                elements.result.innerHTML = '⏳ Carregando modelo...';
+                
+                console.log('🔍 Iniciando carregamento do modelo...');
                 model = await tf.loadLayersModel(MODEL_URL);
-                document.getElementById('loading').style.display = 'none';
-                console.log('Modelo carregado com sucesso!');
-                document.getElementById('result').textContent = 'Modelo carregado! Faça upload de uma imagem ou use a webcam.';
-            } catch (error) {
-                console.error('Erro ao carregar modelo:', error);
-                document.getElementById('result').textContent = 'Erro ao carregar modelo. Verifique o console.';
-            }
-        }
-
-        // Iniciar webcam
-        async function startWebcam() {
-            try {
-                const video = document.getElementById('webcam');
-                webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = webcamStream;
-                video.style.display = 'block';
-            } catch (error) {
-                console.error('Erro ao acessar webcam:', error);
-                alert('Não foi possível acessar a webcam.');
-            }
-        }
-
-        // Parar webcam
-        function stopWebcam() {
-            if (webcamStream) {
-                webcamStream.getTracks().forEach(track => track.stop());
-                document.getElementById('webcam').style.display = 'none';
-            }
-        }
-
-        // Capturar imagem da webcam e fazer predição
-        async function captureAndPredict() {
-            const video = document.getElementById('webcam');
-            const canvas = document.getElementById('canvas');
-            const context = canvas.getContext('2d');
-
-            // Configurar canvas com o mesmo tamanho do vídeo
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            
-            // Desenhar frame atual do vídeo no canvas
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Converter para data URL e processar
-            const imageData = canvas.toDataURL('image/jpeg');
-            await processImage(imageData);
-        }
-
-        // Processar imagem upload
-        async function handleImageUpload(files) {
-            if (files.length > 0) {
-                const file = files[0];
-                const reader = new FileReader();
                 
-                reader.onload = async function(e) {
-                    await processImage(e.target.result);
-                };
+                console.log('✅ Modelo carregado!', model);
+                elements.result.innerHTML = '✅ Modelo carregado! Faça upload de uma imagem.';
                 
-                reader.readAsDataURL(file);
+                // Verificar arquitetura do modelo
+                console.log('📐 Arquitetura do modelo:', model.inputs[0].shape);
+                console.log('📊 Saída do modelo:', model.outputs[0].shape);
+                
+                setupEventListeners();
+                
+            } catch (error) {
+                console.error('❌ Erro ao carregar modelo:', error);
+                elements.result.innerHTML = '❌ Erro ao carregar modelo. Verifique o console.';
+                elements.result.className = 'error';
             }
         }
 
-        // 🔧 FUNÇÃO PRINCIPAL - PROCESSAR IMAGEM E FAZER PREDIÇÃO
-        async function processImage(imageData) {
-            if (!model) {
-                alert('Modelo ainda não carregado. Aguarde...');
+        // Configurar eventos
+        function setupEventListeners() {
+            elements.fileInput.addEventListener('change', handleFileSelect);
+            
+            // Drag and drop
+            elements.uploadArea.addEventListener('dragover', (e) => e.preventDefault());
+            elements.uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files.length) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+        }
+
+        // Seleção de arquivo
+        function handleFileSelect(e) {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        }
+
+        // Processar arquivo
+        function handleFile(file) {
+            if (!file.type.match('image.*')) {
+                showError('Por favor, selecione uma imagem!');
                 return;
             }
 
-            try {
-                document.getElementById('loading').style.display = 'block';
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                elements.imagePreview.src = e.target.result;
+                elements.imagePreview.style.display = 'block';
+                elements.classifyBtn.disabled = false;
+                elements.result.innerHTML = '📸 Imagem carregada! Clique em "Classificar Imagem"';
+                elements.result.className = '';
+                elements.debugInfo.style.display = 'none';
                 
-                // Mostrar preview da imagem
-                const preview = document.getElementById('imagePreview');
-                preview.src = imageData;
-                preview.style.display = 'block';
+                currentImage = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
 
-                // Criar elemento imagem para processamento
+        // 🔧 FUNÇÃO PRINCIPAL DE CLASSIFICAÇÃO - VERSÃO DEBUG
+        async function classifyImage() {
+            if (!model || !currentImage) return;
+
+            try {
+                elements.classifyBtn.disabled = true;
+                elements.result.innerHTML = '⏳ Analisando imagem...';
+                elements.result.className = 'loading';
+
+                // Criar elemento de imagem
                 const img = new Image();
-                img.src = imageData;
+                img.src = currentImage;
                 
-                await new Promise((resolve) => {
+                await new Promise((resolve, reject) => {
                     img.onload = resolve;
+                    img.onerror = reject;
                 });
 
-                // 🔧 PRÉ-PROCESSAMENTO - AJUSTE CONFORME SEU MODELO!
-                const tensor = tf.browser.fromPixels(img)
-                    .resizeNearestNeighbor([224, 224]) // Tamanho comum, ajuste se necessário
-                    .toFloat()
-                    .expandDims(0);
+                // 🔧 DIFERENTES MÉTODOS DE PRÉ-PROCESSAMENTO
+                let tensor;
+                let debugInfo = '';
+
+                // Método 1: Tentativa padrão
+                try {
+                    debugInfo += "🔧 Tentando Método 1 (Padrão)...\n";
+                    tensor = tf.browser.fromPixels(img)
+                        .resizeNearestNeighbor([224, 224])
+                        .toFloat()
+                        .div(255.0)
+                        .expandDims(0);
+                    debugInfo += `✅ Tensor criado: ${tensor.shape}\n`;
+                } catch (error) {
+                    debugInfo += `❌ Método 1 falhou: ${error.message}\n`;
+                    
+                    // Método 2: Sem normalização
+                    try {
+                        debugInfo += "🔧 Tentando Método 2 (Sem normalização)...\n";
+                        tensor = tf.browser.fromPixels(img)
+                            .resizeNearestNeighbor([224, 224])
+                            .toFloat()
+                            .expandDims(0);
+                        debugInfo += `✅ Tensor criado: ${tensor.shape}\n`;
+                    } catch (error2) {
+                        debugInfo += `❌ Método 2 falhou: ${error2.message}\n`;
+                        
+                        // Método 3: Tamanho diferente
+                        try {
+                            debugInfo += "🔧 Tentando Método 3 (Tamanho 150x150)...\n";
+                            tensor = tf.browser.fromPixels(img)
+                                .resizeNearestNeighbor([150, 150])
+                                .toFloat()
+                                .div(255.0)
+                                .expandDims(0);
+                            debugInfo += `✅ Tensor criado: ${tensor.shape}\n`;
+                        } catch (error3) {
+                            debugInfo += `❌ Método 3 falhou: ${error3.message}\n`;
+                            throw new Error('Todos os métodos de pré-processamento falharam');
+                        }
+                    }
+                }
+
+                console.log('🎯 Fazendo predição...');
+                debugInfo += `🎯 Shape do tensor: ${tensor.shape}\n`;
 
                 // Fazer predição
                 const prediction = await model.predict(tensor).data();
+                console.log('📊 Predição:', prediction);
+                debugInfo += `📊 Valores da predição: [${Array.from(prediction).join(', ')}]\n`;
+
+                // Interpretar resultado
+                let resultado, confianca;
                 
-                // 🔧 INTERPRETAÇÃO DO RESULTADO - AJUSTE CONFORME SEU MODELO!
-                // Supondo que seu modelo retorna [prob_olhos_fechados, prob_olhos_abertos]
-                const resultado = prediction[0] > 0.5 ? 
-                    { classe: 'FECHADOS', confianca: prediction[0] } : 
-                    { classe: 'ABERTOS', confianca: 1 - prediction[0] };
+                if (prediction.length === 1) {
+                    // Saída única (sigmoid)
+                    confianca = prediction[0];
+                    resultado = prediction[0] > 0.5 ? 'BANANA 🍌' : 'MAMÃO 🍈';
+                    debugInfo += `📈 Interpretação: Saída única = ${prediction[0]}\n`;
+                } else {
+                    // Múltiplas saídas (softmax)
+                    const maxIndex = prediction.indexOf(Math.max(...prediction));
+                    confianca = prediction[maxIndex];
+                    resultado = maxIndex === 0 ? 'BANANA 🍌' : 'MAMÃO 🍈';
+                    debugInfo += `📈 Interpretação: Múltiplas saídas, índice ${maxIndex}\n`;
+                }
 
                 // Exibir resultado
-                const resultDiv = document.getElementById('result');
-                resultDiv.textContent = `Olhos: ${resultado.classe} (${(resultado.confianca * 100).toFixed(1)}% confiança)`;
-                resultDiv.className = resultado.classe === 'ABERTOS' ? 'open' : 'closed';
+                const confiancaPercent = (confianca * 100).toFixed(1);
+                elements.result.innerHTML = `${resultado}<br><small>Confiança: ${confiancaPercent}%</small>`;
+                elements.result.className = resultado.includes('BANANA') ? 'banana' : 'mamao';
 
-                // Limpar tensor da memória
+                // Mostrar informações de debug
+                elements.debugContent.textContent = debugInfo;
+                elements.debugInfo.style.display = 'block';
+
+                // Limpar memória
                 tensor.dispose();
 
             } catch (error) {
-                console.error('Erro ao processar imagem:', error);
-                document.getElementById('result').textContent = 'Erro ao processar imagem.';
+                console.error('❌ Erro detalhado:', error);
+                showError(`Erro ao processar: ${error.message}`);
             } finally {
-                document.getElementById('loading').style.display = 'none';
+                elements.classifyBtn.disabled = false;
             }
         }
 
-        // Carregar modelo quando a página carregar
-        window.onload = loadModel;
+        function showError(message) {
+            elements.result.innerHTML = `❌ ${message}`;
+            elements.result.className = 'error';
+        }
+
+        function resetApp() {
+            elements.imagePreview.style.display = 'none';
+            elements.fileInput.value = '';
+            elements.classifyBtn.disabled = true;
+            elements.result.innerHTML = 'Faça upload de uma imagem para começar!';
+            elements.result.className = '';
+            elements.debugInfo.style.display = 'none';
+            currentImage = null;
+        }
+
+        // Iniciar aplicação
+        window.onload = initApp;
     </script>
 </body>
 </html>

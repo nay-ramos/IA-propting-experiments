@@ -51,7 +51,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>👁️ Detector de Olhos Abertos/Fechados</h1>
+        <h1>Seus olhos estão fechados ou abertos?</h1>
         
         <div>
             <button onclick="startWebcam()">📷 Iniciar Webcam</button>
@@ -83,7 +83,7 @@
         let webcamStream;
 
         // 🔧 CONFIGURAÇÃO DO MODELO - VOCÊ PRECISA AJUSTAR ESTA URL!
-        const MODEL_URL = 'https://github.com/nay-ramos/IA-propting-experiments/blob/main/model.json';
+        const MODEL_URL = 'https://raw.githubusercontent.com/nay-ramos/IA-propting-experiments/main/model.json';
 
         // Carregar o modelo quando a página abrir
         async function loadModel() {

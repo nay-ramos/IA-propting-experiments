@@ -83,8 +83,7 @@
         let webcamStream;
 
         // 🔧 CONFIGURAÇÃO DO MODELO - VOCÊ PRECISA AJUSTAR ESTA URL!
-        const MODEL_URL = 'SEU_MODELO_AQUI/model.json';
-        // Exemplo: const MODEL_URL = 'https://seuusuario.github.io/meu-projeto/model.json';
+        const MODEL_URL = 'https://github.com/nay-ramos/IA-propting-experiments/blob/main/model.json';
 
         // Carregar o modelo quando a página abrir
         async function loadModel() {

@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detector de Olhos - IA</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        #webcam, #imagePreview {
+            max-width: 100%;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #result {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 15px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .open { color: green; }
+        .closed { color: red; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>👁️ Detector de Olhos Abertos/Fechados</h1>
+        
+        <div>
+            <button onclick="startWebcam()">📷 Iniciar Webcam</button>
+            <button onclick="stopWebcam()">⏹️ Parar Webcam</button>
+            <button onclick="captureAndPredict()">🎯 Capturar e Analisar</button>
+        </div>
+
+        <video id="webcam" autoplay playsinline style="display: none;"></video>
+        <canvas id="canvas" style="display: none;"></canvas>
+        <img id="imagePreview" style="display: none;">
+        
+        <div>
+            <input type="file" id="fileInput" accept="image/*" onchange="handleImageUpload(this.files)">
+            <label for="fileInput">📁 Ou faça upload de uma imagem</label>
+        </div>
+
+        <div id="result">Aguardando análise...</div>
+        
+        <div id="loading" style="display: none;">
+            ⏳ Processando imagem...
+        </div>
+    </div>
+
+    <!-- Incluir TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+
+    <script>
+        let model;
+        let webcamStream;
+
+        // 🔧 CONFIGURAÇÃO DO MODELO - VOCÊ PRECISA AJUSTAR ESTA URL!
+        const MODEL_URL = 'SEU_MODELO_AQUI/model.json';
+        // Exemplo: const MODEL_URL = 'https://seuusuario.github.io/meu-projeto/model.json';
+
+        // Carregar o modelo quando a página abrir
+        async function loadModel() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                model = await tf.loadLayersModel(MODEL_URL);
+                document.getElementById('loading').style.display = 'none';
+                console.log('Modelo carregado com sucesso!');
+                document.getElementById('result').textContent = 'Modelo carregado! Faça upload de uma imagem ou use a webcam.';
+            } catch (error) {
+                console.error('Erro ao carregar modelo:', error);
+                document.getElementById('result').textContent = 'Erro ao carregar modelo. Verifique o console.';
+            }
+        }
+
+        // Iniciar webcam
+        async function startWebcam() {
+            try {
+                const video = document.getElementById('webcam');
+                webcamStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = webcamStream;
+                video.style.display = 'block';
+            } catch (error) {
+                console.error('Erro ao acessar webcam:', error);
+                alert('Não foi possível acessar a webcam.');
+            }
+        }
+
+        // Parar webcam
+        function stopWebcam() {
+            if (webcamStream) {
+                webcamStream.getTracks().forEach(track => track.stop());
+                document.getElementById('webcam').style.display = 'none';
+            }
+        }
+
+        // Capturar imagem da webcam e fazer predição
+        async function captureAndPredict() {
+            const video = document.getElementById('webcam');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+
+            // Configurar canvas com o mesmo tamanho do vídeo
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // Desenhar frame atual do vídeo no canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Converter para data URL e processar
+            const imageData = canvas.toDataURL('image/jpeg');
+            await processImage(imageData);
+        }
+
+        // Processar imagem upload
+        async function handleImageUpload(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                const reader = new FileReader();
+                
+                reader.onload = async function(e) {
+                    await processImage(e.target.result);
+                };
+                
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // 🔧 FUNÇÃO PRINCIPAL - PROCESSAR IMAGEM E FAZER PREDIÇÃO
+        async function processImage(imageData) {
+            if (!model) {
+                alert('Modelo ainda não carregado. Aguarde...');
+                return;
+            }
+
+            try {
+                document.getElementById('loading').style.display = 'block';
+                
+                // Mostrar preview da imagem
+                const preview = document.getElementById('imagePreview');
+                preview.src = imageData;
+                preview.style.display = 'block';
+
+                // Criar elemento imagem para processamento
+                const img = new Image();
+                img.src = imageData;
+                
+                await new Promise((resolve) => {
+                    img.onload = resolve;
+                });
+
+                // 🔧 PRÉ-PROCESSAMENTO - AJUSTE CONFORME SEU MODELO!
+                const tensor = tf.browser.fromPixels(img)
+                    .resizeNearestNeighbor([224, 224]) // Tamanho comum, ajuste se necessário
+                    .toFloat()
+                    .expandDims(0);
+
+                // Fazer predição
+                const prediction = await model.predict(tensor).data();
+                
+                // 🔧 INTERPRETAÇÃO DO RESULTADO - AJUSTE CONFORME SEU MODELO!
+                // Supondo que seu modelo retorna [prob_olhos_fechados, prob_olhos_abertos]
+                const resultado = prediction[0] > 0.5 ? 
+                    { classe: 'FECHADOS', confianca: prediction[0] } : 
+                    { classe: 'ABERTOS', confianca: 1 - prediction[0] };
+
+                // Exibir resultado
+                const resultDiv = document.getElementById('result');
+                resultDiv.textContent = `Olhos: ${resultado.classe} (${(resultado.confianca * 100).toFixed(1)}% confiança)`;
+                resultDiv.className = resultado.classe === 'ABERTOS' ? 'open' : 'closed';
+
+                // Limpar tensor da memória
+                tensor.dispose();
+
+            } catch (error) {
+                console.error('Erro ao processar imagem:', error);
+                document.getElementById('result').textContent = 'Erro ao processar imagem.';
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        // Carregar modelo quando a página carregar
+        window.onload = loadModel;
+    </script>
+</body>
+</html>
